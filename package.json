@@ -11,7 +11,8 @@
     "quill",
     "directory"
   ],
-  "main": "index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "lint": "eslint . --cache",
     "build": "gulp --require @esbuild-kit/cjs-loader",
