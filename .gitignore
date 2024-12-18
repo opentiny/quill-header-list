@@ -1,0 +1,7 @@
+node_modules
+dist
+/docs/**/*
+
+!/docs/index.js
+!/docs/index.html
+.eslintcache
