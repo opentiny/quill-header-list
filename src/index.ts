@@ -2,7 +2,7 @@ import type TypeToolbar from 'quill/modules/toolbar';
 import Quill from 'quill';
 import { HeaderWithID } from './formats';
 import headerListSvg from './svg/header-list.svg';
-import { createBEM, isFunction, isNumber, isString } from './utils';
+import { createBEM, isFunction, isNumber, isString, throttleAndDebounce } from './utils';
 
 export interface HeaderListOptions {
   container: HTMLElement;
@@ -36,13 +36,12 @@ export class HeaderList {
     }, true);
   }
 
+  scrollContainerListener = throttleAndDebounce(this.handleScroll.bind(this), 100);
   editorHeaders: { el: HTMLElement; text: string }[] = [];
   isHidden: boolean = false;
   bem = createBEM('header-list');
   root?: HTMLElement;
   options: HeaderListOptions;
-  resizeObserver?: ResizeObserver;
-  intersectionObserver?: IntersectionObserver;
   highlightedItem?: Element;
   #lastTopOffset: number = 0;
   constructor(public quill: Quill, options: InputHeaderListOptions) {
@@ -52,31 +51,13 @@ export class HeaderList {
       this.root = this.buildList();
       this.options.container.appendChild(this.root);
 
-      this.quill.on(Quill.events.TEXT_CHANGE, () => {
-        const currentHeaders = Array.from(this.quill.root.querySelectorAll<HTMLElement>(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'));
-        const removedHeaders = this.editorHeaders.map(item => item.el).filter(header => !currentHeaders.includes(header));
-        const newHeaders: { el: HTMLElement; index: number }[] = [];
-        const modifiedHeaders: HTMLElement[] = [];
-        for (const [index, header] of currentHeaders.entries()) {
-          if (!this.editorHeaders.some(item => item.el === header)) {
-            newHeaders.push({ el: header, index });
-          }
-          else if (this.editorHeaders.some(({ el, text }) => el === header && text !== header.textContent)) {
-            modifiedHeaders.push(header);
-          }
-        }
-
-        this.update(newHeaders, removedHeaders, modifiedHeaders);
-        this.editorHeaders = currentHeaders.map(el => ({ el, text: el.textContent || '' }));
-      });
+      this.quill.on(Quill.events.TEXT_CHANGE, throttleAndDebounce(() => this.updateHeaders(), 500));
       this.quill.on(Quill.events.EDITOR_CHANGE, () => {
         const [range] = this.quill.selection.getRange();
         if (range === null) {
           this.activeToolbarControl();
         }
       });
-
-      this.bindObserver();
     }
     else {
       console.warn('header-list: options.container is required');
@@ -118,7 +99,6 @@ export class HeaderList {
         let offset = await resultTopOffset();
         offset = Number.isNaN(Number(offset)) ? 0 : offset;
         if (this.#lastTopOffset !== offset) {
-          this.bindObserver();
           this.#lastTopOffset = offset;
         }
         return offset;
@@ -126,47 +106,61 @@ export class HeaderList {
     });
   }
 
-  bindObserver() {
-    if (this.resizeObserver) {
-      this.resizeObserver.disconnect();
+  updateHeaders() {
+    const currentHeaders = Array.from(this.quill.root.querySelectorAll<HTMLElement>(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'));
+    const removedHeaders = this.editorHeaders.map(item => item.el).filter(header => !currentHeaders.includes(header));
+    const newHeaders: { el: HTMLElement; index: number }[] = [];
+    const modifiedHeaders: HTMLElement[] = [];
+    for (const [index, header] of currentHeaders.entries()) {
+      if (!this.editorHeaders.some(item => item.el === header)) {
+        newHeaders.push({ el: header, index });
+      }
+      else if (this.editorHeaders.some(({ el, text }) => el === header && text !== header.textContent)) {
+        modifiedHeaders.push(header);
+      }
     }
-    // specify the scrollContainer height and header height to calculate the intersection
-    // more accurate height will be more easy calculate highlight header
-    this.resizeObserver = new ResizeObserver(async () => {
-      if (this.intersectionObserver) {
-        this.intersectionObserver.disconnect();
-      }
-      const offset = await this.options.topOffset();
-      // create new intersection observer
-      this.intersectionObserver = new IntersectionObserver(this.handleIntersection, {
-        root: this.options.scrollContainer || null,
-        rootMargin: `${offset}px 0px ${this.calculateIntersectionRootMargin() + offset}px 0px`,
-      });
-      // update current header to new intersection observer
-      for (const { el } of this.editorHeaders) {
-        this.intersectionObserver.observe(el);
-      }
-      const { removeEl, addEl } = this.editorHeaders.reduce((acc, { el }, index) => {
-        acc.addEl.push({ el, index });
-        acc.removeEl.push(el);
-        return acc;
-      }, {
-        removeEl: [] as Parameters<typeof this.update>[1],
-        addEl: [] as Parameters<typeof this.update>[0],
-      });
-      this.update(addEl, removeEl, []);
-    });
-    this.resizeObserver.observe(this.options.scrollContainer || document.documentElement);
+
+    this.update(newHeaders, removedHeaders, modifiedHeaders);
+    this.editorHeaders = currentHeaders.map(el => ({ el, text: el.textContent || '' }));
   }
 
-  calculateIntersectionRootMargin() {
-    const containerRect = (this.options.scrollContainer || document.documentElement).getBoundingClientRect();
-    // if root is window. use window.innerHeight
-    let marginTop = -1 * containerRect.height + this.options.headerHeight;
-    if (!this.options.scrollContainer) {
-      marginTop = -1 * window.innerHeight + this.options.headerHeight;
+  bindScrollListener() {
+    let container: HTMLElement | Window = window;
+    if (this.options.scrollContainer) {
+      container = this.options.scrollContainer;
     }
-    return marginTop;
+    container.addEventListener('scroll', this.scrollContainerListener);
+  }
+
+  removeScrollListener() {
+    let container: HTMLElement | Window = window;
+    if (this.options.scrollContainer) {
+      container = this.options.scrollContainer;
+    }
+    container.removeEventListener('scroll', this.scrollContainerListener);
+  }
+
+  async handleScroll() {
+    if (!this.root) return;
+    let header: HTMLElement | null = this.editorHeaders[0]?.el || null;
+    const container = this.options.scrollContainer || document.documentElement;
+    const topOffset = await this.options.topOffset();
+    const scrollTop = container.scrollTop;
+    const offsetParent = this.options.scrollContainer?.offsetParent || document.body;
+
+    const headers = this.editorHeaders
+      .map(({ el }) => ({ el, top: getAbsoluteTop(el, offsetParent as HTMLElement) }))
+      .filter(({ top }) => !Number.isNaN(top))
+      .sort((a, b) => a.top - b.top);
+    for (const { el, top } of headers) {
+      if (top > scrollTop + topOffset + this.options.headerHeight) {
+        break;
+      }
+      header = el;
+    }
+
+    if (!header) return;
+    this.setHighlight(header.id);
   }
 
   buildList() {
@@ -188,6 +182,7 @@ export class HeaderList {
     this.options.container.classList.add(this.options.hideClass);
     this.isHidden = true;
     this.activeToolbarControl();
+    this.removeScrollListener();
   }
 
   async show() {
@@ -195,6 +190,8 @@ export class HeaderList {
     this.options.container.classList.remove(this.options.hideClass);
     this.isHidden = false;
     this.activeToolbarControl();
+    this.handleScroll();
+    this.bindScrollListener();
   }
 
   activeToolbarControl() {
@@ -216,18 +213,16 @@ export class HeaderList {
   }
 
   update(addHeaders: { el: HTMLElement; index: number }[], removeHeaders: HTMLElement[], modifiedHeaders: HTMLElement[]) {
-    if (!this.root || !this.intersectionObserver) return;
+    if (!this.root) return;
     for (const header of removeHeaders) {
       const item = this.root.querySelector(`[data-id="${header.id}"]`);
       if (item) {
         item.remove();
-        this.intersectionObserver.unobserve(header);
       }
     }
 
     for (const { index, el } of addHeaders) {
       this.root.insertBefore(this.createListItem(el.id, el.textContent || '', Number(el.tagName.slice(1))), this.root.children[index]);
-      this.intersectionObserver.observe(el);
     }
     this.root.addEventListener('click', async (e) => {
       const target = e.target as HTMLElement;
@@ -264,92 +259,33 @@ export class HeaderList {
     }
   }
 
-  setHighlight(item: Element) {
-    if (this.highlightedItem) {
-      this.highlightedItem.classList.remove(this.bem.is('highlight'));
-    }
-    item.classList.add(this.bem.is('highlight'));
-    this.highlightedItem = item;
-  }
-
-  handleIntersection = (entries: IntersectionObserverEntry[]) => {
+  setHighlight(id: string) {
     if (!this.root) return;
-    const headers: IntersectionObserverEntry[] = [];
-    // find the headers in the scrllContainer viewport
-    for (const entry of entries) {
-      if (isElementInViewport(entry.target, this.options.scrollContainer)) {
-        headers.push(entry);
+    const item = this.root.querySelector(`:scope > [data-id="${id}"]`);
+    if (item) {
+      if (this.highlightedItem) {
+        this.highlightedItem.classList.remove(this.bem.is('highlight'));
       }
+      item.classList.add(this.bem.is('highlight'));
+      this.highlightedItem = item;
     }
-
-    // find the header at the top
-    const entry = headers.reduce((entry, current) => {
-      if (!entry || entry.boundingClientRect.y > current.boundingClientRect.y) {
-        return current;
-      }
-      return entry;
-    }, null as null | IntersectionObserverEntry);
-
-    let header: Element | null = null;
-    if (!entry || entry.isIntersecting === false) {
-      // if header doesn't found or header doesn't in the viewport intersection
-      // find the bottommost header above the viewport intersection and topmose header below viewport
-      let offsetTop = 0;
-      let offsetBottom = Infinity;
-      for (const { el } of this.editorHeaders) {
-        const elOffset = el.offsetTop;
-        const { isInViewport, onTop, onBottom } = isElementInViewport(el, this.options.scrollContainer);
-        if (!isInViewport) {
-          if (onTop && offsetTop < elOffset) {
-            header = el;
-            offsetTop = elOffset;
-          }
-          else if (onBottom && offsetBottom > elOffset) {
-            header = el;
-            offsetBottom = elOffset;
-          }
-        }
-        else {
-          if (!header) {
-            header = el;
-          }
-          break;
-        }
-      }
-    }
-    else {
-      header = entry.target;
-    }
-
-    if (!header || !header.id) return;
-    const headerId = header.id;
-    const listItem = this.root.querySelector(`:scope > [data-id="${headerId}"]`);
-    if (listItem) {
-      this.setHighlight(listItem);
-    }
-  };
+  }
 }
 
-function isElementInViewport(child: Element, box?: Element) {
-  const boxRect = box
-    ? box.getBoundingClientRect()
-    : {
-        top: 0,
-        left: 0,
-        bottom: window.innerHeight,
-        right: window.innerWidth,
-      };
-  const childRect = child.getBoundingClientRect();
-  return {
-    isInViewport: !(
-      childRect.bottom < boxRect.top
-      || childRect.top > boxRect.bottom
-      || childRect.right < boxRect.left
-      || childRect.left > boxRect.right
-    ),
-    onTop: childRect.top < boxRect.top,
-    onBottom: childRect.bottom > boxRect.bottom,
-  };
+function getAbsoluteTop(element: HTMLElement, container: HTMLElement = document.body): number {
+  let offsetTop = 0;
+  while (element !== container) {
+    if (element === null) {
+      // child element is:
+      // - not attached to the DOM (display: none)
+      // - set to fixed position (not scrollable)
+      // - body or html element (null offsetParent)
+      return Number.NaN;
+    }
+    offsetTop += element.offsetTop;
+    element = element.offsetParent as HTMLElement;
+  }
+  return offsetTop;
 }
 
 export * from './formats';
