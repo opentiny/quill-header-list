@@ -13,6 +13,9 @@
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "lint": "eslint . --cache",
     "build": "gulp --require @esbuild-kit/cjs-loader",
