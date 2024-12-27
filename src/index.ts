@@ -1,6 +1,7 @@
+import type TypeHeader from 'quill/formats/header';
 import type TypeToolbar from 'quill/modules/toolbar';
 import Quill from 'quill';
-import { HeaderWithID } from './formats';
+import { generateHeaderWithId } from './header';
 import headerListSvg from './svg/header-list.svg';
 import { createBEM, isFunction, isNumber, isString, throttleAndDebounce } from './utils';
 
@@ -30,6 +31,9 @@ export class HeaderList {
   static register() {
     const icons = Quill.import('ui/icons') as Record<string, string>;
     icons[HeaderList.toolName] = headerListSvg;
+
+    const Header = Quill.import('formats/header') as typeof TypeHeader;
+    const HeaderWithID = generateHeaderWithId(Header);
 
     Quill.register({
       'formats/header': HeaderWithID,
