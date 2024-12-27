@@ -9,10 +9,18 @@ npm install quill-header-list
 ```
 
 ```js
+import HeaderList from 'quill-header-list';
+
+Quill.register({ 'modules/header-list': HeaderList }, true);
 new Quill('#editor', {
   theme: 'snow',
   modules: {
-    'toolbar': [[{ header: [null, 1, 2, 3, 4, 5, 6] }, 'header-list'],],
+    'toolbar': {
+      container: [[{ header: [null, 1, 2, 3, 4, 5, 6] }, 'header-list']],
+      handlers: {
+        'header-list': HeaderList.toolbarHandle
+      }
+    },
     'header-list': {
       container: document.getElementById('directory'), // specify a element to receive the header list
     },
