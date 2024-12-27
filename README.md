@@ -10,6 +10,7 @@ npm install quill-header-list
 
 ```js
 import HeaderList from 'quill-header-list';
+import 'quill-header-list/dist/index.css';
 
 Quill.register({ 'modules/header-list': HeaderList }, true);
 new Quill('#editor', {
