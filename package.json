@@ -1,7 +1,7 @@
 {
   "name": "quill-header-list",
   "type": "module",
-  "version": "0.0.2",
+  "version": "1.0.0",
   "packageManager": "pnpm@10.12.1",
   "description": "Automatically generate directory",
   "author": "zzxming",
