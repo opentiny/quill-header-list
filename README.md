@@ -2,7 +2,7 @@
 
 [demo](https://opentiny.github.io/quill-header-list/)
 
-## usage
+## Usage
 
 ```bash
 npm install quill-header-list
@@ -29,7 +29,7 @@ new Quill('#editor', {
 });
 ```
 
-## options
+## Options
 
 | name            | type                     | description                                                                                                                            | default     | required |
 | --------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------- |
@@ -42,9 +42,13 @@ new Quill('#editor', {
 | onBeforeHide    | `() => boolean`          | trigger before hidden. return `true` will cancel hidden                                                                                | -           | `false`  |
 | onItemClick     | `(id: string) => void`   | trigger when click list item. id is the header element id                                                                              | -           | `false`  |
 
-## other
+> Module changed the `header` value struct in delta. If you have other custom values in `header` value, you need change `class XXX extend Header` with `class XXX extend HeaderWithID` and update `formats` function.
 
-if you have a fixed element in your page. you can use `topOffset` to return the height of the fixed element. then the header-list-item scroll position will not cover by the fixed element.
+## Other
+
+### Fixed Element On Page
+
+If you have a fixed element in your page, you can use `topOffset` to return the height of the fixed element. Then the header-list-item scroll position will not cover by the fixed element.
 
 ```js
 new Quill('#editor', {
@@ -63,4 +67,15 @@ new Quill('#editor', {
     },
   },
 });
+```
+
+### Custom Header Id attribute
+
+```js
+import HeaderList, { HeaderWithID } from 'quill-header-list';
+import 'quill-header-list/dist/index.css';
+
+// set custom header id attribute to 'id' (default is 'data-block-id')
+HeaderWithID.idKey = 'id';
+Quill.register({ 'modules/header-list': HeaderList }, true);
 ```
