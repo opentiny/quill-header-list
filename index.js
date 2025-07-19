@@ -1,5 +1,5 @@
 const Quill = window.Quill;
-const { default: HeaderList } = window.bundle;
+const { default: HeaderList } = window.HeaderList;
 
 Quill.register({
   [`modules/${HeaderList.moduleName}`]: HeaderList,
