@@ -29,4 +29,13 @@ export class HeaderWithID extends Header {
       value,
     };
   }
+
+  get id() {
+    let value = this.domNode.getAttribute(this.statics.idKey);
+    if (!value) {
+      value = randomID();
+      this.domNode.setAttribute(this.statics.idKey, value);
+    }
+    return value;
+  }
 }

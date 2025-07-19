@@ -2,7 +2,7 @@ import type TypeToolbar from 'quill/modules/toolbar';
 import Quill from 'quill';
 import { HeaderWithID } from './formats';
 import headerListSvg from './svg/header-list.svg';
-import { createBEM, isFunction, isNumber, isString, throttleAndDebounce } from './utils';
+import { createBEM, ensureArray, isFunction, isNumber, isString, throttleAndDebounce } from './utils';
 
 export interface HeaderListOptions {
   container: HTMLElement;
@@ -18,6 +18,10 @@ export type InputHeaderListOptions = Partial<Omit<HeaderListOptions, 'container'
   container: HTMLElement | string;
   scrollContainer: HTMLElement | string;
 };
+export interface HeaderRecord {
+  el: HTMLElement;
+  blot: HeaderWithID;
+}
 export class HeaderList {
   static moduleName = 'header-list';
   static toolName = 'header-list';
@@ -37,7 +41,7 @@ export class HeaderList {
   }
 
   scrollContainerListener = throttleAndDebounce(this.handleScroll.bind(this), 100);
-  editorHeaders: { el: HTMLElement; text: string }[] = [];
+  editorHeaders: (HeaderRecord & { text: string })[] = [];
   isHidden: boolean = false;
   bem = createBEM('header-list');
   root?: HTMLElement;
@@ -72,7 +76,9 @@ export class HeaderList {
         : options.scrollContainer
       : this.quill.root;
     // @ts-ignore
-    if (scrollContainer === window || scrollContainer === document.documentElement) scrollContainer = undefined;
+    if (scrollContainer === window || scrollContainer === document.documentElement) {
+      scrollContainer = null;
+    }
 
     let resultTopOffset: () => Promise<number> | number;
     const inputTopOffset = options.topOffset;
@@ -107,21 +113,30 @@ export class HeaderList {
   }
 
   updateHeaders() {
-    const currentHeaders = Array.from(this.quill.root.querySelectorAll<HTMLElement>(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'));
-    const removedHeaders = this.editorHeaders.map(item => item.el).filter(header => !currentHeaders.includes(header));
-    const newHeaders: { el: HTMLElement; index: number }[] = [];
+    const currentHeaders = Array.from(
+      this.quill.root.querySelectorAll<HTMLElement>(
+        ':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6',
+      ),
+    )
+      .map(el => ({
+        el,
+        blot: this.quill.scroll.find(el) as HeaderWithID,
+      }))
+      .filter(item => item.blot);
+    const removedHeaders = this.editorHeaders.map(item => item.el).filter(item => !currentHeaders.some(header => header.el === item));
+    const newHeaders: (HeaderRecord & { index: number })[] = [];
     const modifiedHeaders: HTMLElement[] = [];
     for (const [index, header] of currentHeaders.entries()) {
-      if (!this.editorHeaders.some(item => item.el === header)) {
-        newHeaders.push({ el: header, index });
+      if (!this.editorHeaders.some(item => item.el === header.el)) {
+        newHeaders.push({ ...header, index });
       }
-      else if (this.editorHeaders.some(({ el, text }) => el === header && text !== header.textContent)) {
-        modifiedHeaders.push(header);
+      else if (this.editorHeaders.some(({ el, text }) => el === header.el && text !== header.el.textContent)) {
+        modifiedHeaders.push(header.el);
       }
     }
 
     this.update(newHeaders, removedHeaders, modifiedHeaders);
-    this.editorHeaders = currentHeaders.map(el => ({ el, text: el.textContent || '' }));
+    this.editorHeaders = currentHeaders.map(header => ({ ...header, text: header.el.textContent || '' }));
   }
 
   bindScrollListener() {
@@ -160,13 +175,46 @@ export class HeaderList {
     }
 
     if (!header) return;
-    this.setHighlight(header.id);
+    const Header = Quill.import('formats/header') as typeof HeaderWithID;
+    const value = Header.formats(header);
+    this.setHighlight(value.id);
   }
 
   buildList() {
     const root = document.createElement('div');
     root.classList.add(this.bem.b());
+    root.addEventListener('click', async (e) => {
+      const target = e.target as HTMLElement;
+      if (!target || !target.classList.contains(this.bem.be('item'))) return;
+      const id = target.dataset.id;
+      if (!id) return;
+      await this.scrollToHeaderById(id);
+      if (isFunction(this.options.onItemClick)) {
+        this.options.onItemClick(id);
+      }
+    });
     return root;
+  }
+
+  async scrollToHeaderById(id: string) {
+    const Header = Quill.import('formats/header') as typeof HeaderWithID;
+    const headerTags = ensureArray(Header.tagName);
+    const selector = headerTags.map(tag => `:scope > ${tag}[${Header.idKey}="${id}"]`).join(', ');
+    const targetHeader = this.quill.root.querySelector(selector) as HTMLElement;
+    if (targetHeader) {
+      const container = this.options.scrollContainer || document.documentElement;
+      // if container is window. then need add editor root offsetTop to scrollTo
+      let containerOffsetTop = 0;
+      if (container === document.documentElement) {
+        const rect = this.quill.root.getBoundingClientRect();
+        containerOffsetTop = rect.top + window.scrollY;
+      }
+      const topOffset = await this.options.topOffset();
+      const offsetPosition = containerOffsetTop + targetHeader.offsetTop - topOffset;
+      container.scrollTo({
+        top: offsetPosition,
+      });
+    }
   }
 
   createListItem(id: string, text: string, level: number) {
@@ -212,7 +260,7 @@ export class HeaderList {
     return this.isHidden ? this.show() : this.hide();
   }
 
-  update(addHeaders: { el: HTMLElement; index: number }[], removeHeaders: HTMLElement[], modifiedHeaders: HTMLElement[]) {
+  update(addHeaders: (HeaderRecord & { index: number })[], removeHeaders: HTMLElement[], modifiedHeaders: HTMLElement[]) {
     if (!this.root) return;
     for (const header of removeHeaders) {
       const item = this.root.querySelector(`[data-id="${header.id}"]`);
@@ -221,35 +269,10 @@ export class HeaderList {
       }
     }
 
-    for (const { index, el } of addHeaders) {
-      this.root.insertBefore(this.createListItem(el.id, el.textContent || '', Number(el.tagName.slice(1))), this.root.children[index]);
+    for (const { index, el, blot } of addHeaders) {
+      const { header } = blot.formats();
+      this.root.insertBefore(this.createListItem(header.id, el.textContent || '', header.value), this.root.children[index]);
     }
-    this.root.addEventListener('click', async (e) => {
-      const target = e.target as HTMLElement;
-      if (!target || !target.classList.contains(this.bem.be('item'))) return;
-      const id = target.dataset.id;
-      if (!id) return;
-      const headerTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-      const selector = headerTags.map(tag => `:scope > ${tag}[id="${id}"]`).join(', ');
-      const targetHeader = this.quill.root.querySelector(selector) as HTMLElement;
-      if (targetHeader) {
-        const container = this.options.scrollContainer || document.documentElement;
-        // if container is window. then need add editor root offsetTop to scrollTo
-        let containerOffsetTop = 0;
-        if (container === document.documentElement) {
-          const rect = this.quill.root.getBoundingClientRect();
-          containerOffsetTop = rect.top + window.scrollY;
-        }
-        const topOffset = await this.options.topOffset();
-        const offsetPosition = containerOffsetTop + targetHeader.offsetTop - topOffset;
-        container.scrollTo({
-          top: offsetPosition,
-        });
-      }
-      if (isFunction(this.options.onItemClick)) {
-        this.options.onItemClick(id);
-      }
-    });
 
     for (const header of modifiedHeaders) {
       const listItem = this.root.querySelector(`[data-id="${header.id}"]`);
