@@ -2,7 +2,7 @@
   "name": "quill-header-list",
   "type": "module",
   "version": "0.0.2",
-  "packageManager": "pnpm@9.9.0",
+  "packageManager": "pnpm@10.12.1",
   "description": "Automatically generate directory",
   "author": "zzxming",
   "license": "MIT",
@@ -11,41 +11,47 @@
     "quill",
     "directory"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./index.css": "./dist/index.css"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "lint": "eslint . --cache",
-    "build": "gulp --require @esbuild-kit/cjs-loader",
-    "dev": "gulp --require @esbuild-kit/cjs-loader dev"
+    "build": "tsx ./scripts/build.ts",
+    "dev": "tsx ./scripts/build.ts watch",
+    "server": "tsx ./scripts/start-server.ts"
   },
   "peerDependencies": {
-    "quill": "^2.0.0"
+    "quill": "^2.0.3"
   },
   "devDependencies": {
-    "@esbuild-kit/cjs-loader": "^2.4.4",
-    "@rollup/plugin-node-resolve": "^15.3.0",
-    "@rollup/plugin-terser": "^0.4.4",
-    "@rollup/plugin-typescript": "^11.1.6",
-    "@types/node": "^22.10.2",
-    "@typescript-eslint/eslint-plugin": "^8.18.0",
-    "@typescript-eslint/parser": "^8.18.0",
-    "@zzxming/eslint-config": "^0.3.4",
-    "autoprefixer": "^10.4.20",
-    "esbuild-sass-plugin": "^3.3.1",
-    "glob": "^11.0.0",
-    "gulp": "^4.0.0",
+    "@prettier/plugin-xml": "^3.4.2",
+    "@types/node": "^24.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.37.0",
+    "@typescript-eslint/parser": "^8.37.0",
+    "@zzxming/eslint-config": "^0.5.3",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.29.0",
+    "gulp": "^5.0.1",
     "gulp-clean-css": "^4.3.0",
     "gulp-postcss": "^10.0.0",
-    "gulp-rename": "^2.0.0",
     "gulp-sass": "^5.1.0",
     "parchment": "^3.0.0",
-    "rollup": "^4.18.1",
-    "rollup-plugin-dts": "^6.1.1",
-    "rollup-plugin-svg-import": "^3.0.0",
+    "postcss-pxtorem": "^6.1.0",
     "sass": "^1.83.0",
-    "typescript": "^5.7.2"
+    "tsdown": "^0.12.7",
+    "tslib": "^2.8.1",
+    "tsx": "^4.20.3",
+    "typescript": "~5.7.3",
+    "ws": "^8.18.2"
   }
 }
